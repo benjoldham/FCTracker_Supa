@@ -626,10 +626,12 @@ btnAdd.addEventListener("click", async ()=>{
 
   try{
     await ensureAnonSession();
+    // Strip any legacy client-only fields (e.g. createdAt) that are not columns in Supabase.
+    const { createdAt, ...rest } = data;
     const payload = {
-      ...data,
+      ...rest,
       save_id: CURRENT_SAVE_ID,
-      created_at_ms: Number.isFinite(Number(data.createdAt)) ? Number(data.createdAt) : Date.now(),
+      created_at_ms: Date.now(),
     };
 
     // Insert and get the stored row back
@@ -666,10 +668,12 @@ btnUpdate.addEventListener("click", async ()=>{
 
   try{
     await ensureAnonSession();
+    // Strip any legacy client-only fields (e.g. createdAt) that are not columns in Supabase.
+    const { createdAt, ...rest } = data;
     const payload = {
-      ...data,
+      ...rest,
       save_id: CURRENT_SAVE_ID,
-      created_at_ms: players[idx].created_at_ms || players[idx].createdAt || Date.now(),
+      created_at_ms: players[idx].created_at_ms || Date.now(),
     };
 
     const { data: updated, error } = await supabase
@@ -848,7 +852,7 @@ function readForm(){
   const cost_gbp = Math.round(convertToGBP(costInCur, currency));
   const sale_gbp = Math.round(convertToGBP(saleInCur, currency));
 
-  return { id: uid(), firstName, surname, seniority, pos, intl, potMin, potMax, active, cost_gbp, sale_gbp, createdAt: Date.now() };
+  return { id: uid(), firstName, surname, seniority, pos, intl, potMin, potMax, active, cost_gbp, sale_gbp };
 }
 
 function loadIntoForm(p){
