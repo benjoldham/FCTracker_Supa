@@ -135,6 +135,50 @@ function escapeHtml(str){
     .replaceAll("'","&#039;");
 }
 
+// ---------- Supabase <-> UI field mapping ----------
+// The DB schema uses snake_case columns (e.g. forename, position, ovr, pot_min).
+// The UI code historically uses camelCase (e.g. firstName, pos, intl, potMin).
+// To avoid endless "Could not find the 'X' column" errors, we map in one place.
+
+function fromDbPlayer(row){
+  if(!row) return row;
+  return {
+    ...row,
+    // DB -> UI aliases
+    firstName: row.firstName ?? row.forename ?? row.first ?? "",
+    pos: (row.pos ?? row.position ?? "").toString().toUpperCase(),
+    intl: row.intl ?? row.ovr ?? row.overall ?? row.rating ?? "",
+    potMin: row.potMin ?? row.pot_min ?? row.potential_min ?? "",
+    potMax: row.potMax ?? row.pot_max ?? row.potential_max ?? "",
+  };
+}
+
+function toDbPlayer(p){
+  if(!p) return p;
+  // Strip legacy/client-only fields that are not DB columns
+  const { createdAt, ...x } = p;
+
+  return {
+    // keep id if provided (your schema can be TEXT/UUID; either is fine)
+    id: x.id,
+    save_id: x.save_id,
+
+    // UI -> DB
+    forename: x.forename ?? x.firstName ?? x.first ?? "",
+    surname: x.surname ?? x.last ?? "",
+    seniority: (x.seniority === "Youth") ? "Youth" : "Senior",
+    position: (x.position ?? x.pos ?? "").toString().toUpperCase(),
+    ovr: Number.isFinite(Number(x.ovr ?? x.intl)) ? Number(x.ovr ?? x.intl) : null,
+    pot_min: Number.isFinite(Number(x.pot_min ?? x.potMin)) ? Number(x.pot_min ?? x.potMin) : null,
+    pot_max: Number.isFinite(Number(x.pot_max ?? x.potMax)) ? Number(x.pot_max ?? x.potMax) : null,
+    active: (x.active === "N") ? "N" : "Y",
+    cost_gbp: asInt(x.cost_gbp ?? x.cost ?? 0, 0),
+    sale_gbp: asInt(x.sale_gbp ?? x.sale ?? 0, 0),
+    created_at_ms: Number.isFinite(Number(x.created_at_ms)) ? Number(x.created_at_ms) : Date.now(),
+  };
+}
+
+
 function convertFromGBP(amountGBP, currency){
   const c = (currency in FX) ? currency : "GBP";
   return Number(amountGBP) * FX[c];
@@ -353,7 +397,8 @@ async function fetchPlayers(){
     const cost_gbp = asInt(p.cost_gbp ?? p.cost ?? 0, 0);
     const sale_gbp = asInt(p.sale_gbp ?? p.sale ?? 0, 0);
     const active = (p.active === "N") ? "N" : "Y";
-    return { ...p, seniority, cost_gbp, sale_gbp, active };
+    // Convert DB field names -> UI field names (firstName/pos/intl/potMin/potMax)
+    return fromDbPlayer({ ...p, seniority, cost_gbp, sale_gbp, active });
   });
 }
 
@@ -626,13 +671,8 @@ btnAdd.addEventListener("click", async ()=>{
 
   try{
     await ensureAnonSession();
-    // Strip any legacy client-only fields (e.g. createdAt) that are not columns in Supabase.
-    const { createdAt, ...rest } = data;
-    const payload = {
-      ...rest,
-      save_id: CURRENT_SAVE_ID,
-      created_at_ms: Date.now(),
-    };
+    // Build a DB-shaped payload (snake_case columns) to avoid schema mismatch errors.
+    const payload = toDbPlayer({ ...data, save_id: CURRENT_SAVE_ID, created_at_ms: Date.now() });
 
     // Insert and get the stored row back
     const { data: inserted, error } = await supabase
@@ -643,11 +683,11 @@ btnAdd.addEventListener("click", async ()=>{
 
     if (error) throw error;
 
-    players.push(inserted);
+    players.push(fromDbPlayer(inserted));
 
     // Auto-switch Senior/Youth unless currently All
     if (seniorityFilter !== "All"){
-      setSeniorityFilter(inserted.seniority);
+      setSeniorityFilter(fromDbPlayer(inserted).seniority);
     }
     lastFlashId = inserted.id;
 
@@ -668,13 +708,8 @@ btnUpdate.addEventListener("click", async ()=>{
 
   try{
     await ensureAnonSession();
-    // Strip any legacy client-only fields (e.g. createdAt) that are not columns in Supabase.
-    const { createdAt, ...rest } = data;
-    const payload = {
-      ...rest,
-      save_id: CURRENT_SAVE_ID,
-      created_at_ms: players[idx].created_at_ms || Date.now(),
-    };
+    // Build a DB-shaped payload (snake_case columns) to avoid schema mismatch errors.
+    const payload = toDbPlayer({ ...data, save_id: CURRENT_SAVE_ID, created_at_ms: players[idx].created_at_ms || Date.now() });
 
     const { data: updated, error } = await supabase
       .from("players")
@@ -685,7 +720,7 @@ btnUpdate.addEventListener("click", async ()=>{
 
     if (error) throw error;
 
-    players[idx] = updated;
+    players[idx] = fromDbPlayer(updated);
 
     if (seniorityFilter !== "All"){
       setSeniorityFilter(players[idx].seniority);
@@ -792,11 +827,11 @@ importFile.addEventListener("change", async ()=>{
       return {
         id: x.id || (crypto.randomUUID ? crypto.randomUUID() : uid()),
         save_id: CURRENT_SAVE_ID,
-        forename: String(x.forename ?? x.first ?? "").trim(),
+        forename: String(x.forename ?? x.firstName ?? x.first ?? "").trim(),
         surname: String(x.surname ?? x.last ?? "").trim(),
         seniority: (x.seniority === "Youth") ? "Youth" : "Senior",
-        position: String(x.position ?? "CM"),
-        ovr: asInt(x.ovr ?? 50, 50),
+        position: String(x.position ?? x.pos ?? "CM"),
+        ovr: asInt(x.ovr ?? x.intl ?? 50, 50),
         pot_min: asInt(x.pot_min ?? x.potMin ?? 50, 50),
         pot_max: asInt(x.pot_max ?? x.potMax ?? 50, 50),
         active: (x.active === "N") ? "N" : "Y",
@@ -856,6 +891,7 @@ function readForm(){
 }
 
 function loadIntoForm(p){
+  p = fromDbPlayer(p);
   editingId = p.id;
   fFirst.value = p.firstName || "";
   fSurname.value = p.surname || "";
