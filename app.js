@@ -1,4 +1,4 @@
-import { supabase, ensureAnonSession } from "./supabaseClient.js";
+import { supabase, requireSession } from "./supabaseClient.js";
 
 // FC26 Transfer Tracker (v7) — v6 UI + correct sorting + ex-player toggle
 // Exchange rates source: exchangerate-api.com (open.er-api.com) base GBP.
@@ -25,7 +25,7 @@ function saveSaves(saves){ localStorage.setItem(SAVES_KEY, JSON.stringify(saves)
 
 async function updateSaveName(saveId, nextName){
   const name = String(nextName || "").trim() || "Untitled";
-  await ensureAnonSession();
+  await requireLoginOrRedirect();
   const { data, error } = await supabase
     .from("saves")
     .update({ name })
@@ -293,14 +293,7 @@ if (saveTitleEl && editTitleBtn){
     if (e.key === "Enter"){ e.preventDefault(); commitTitleEdit(); }
     if (e.key === "Escape"){ e.preventDefault(); cancelTitleEdit(); }
   });
-
-  // Live-update the save name while typing (so dashboard stays in sync)
-  saveTitleEl.addEventListener("input", ()=>{
-    if (!isEditingTitle) return;
-    const next = (saveTitleEl.textContent || "").trim();
-    const updated = updateSaveName(CURRENT_SAVE_ID, next || "Untitled");
-    if (updated) CURRENT_SAVE.name = updated.name;
-  });
+  // Live-update while typing disabled for magic-link auth (we commit on Done/blur).
 
   saveTitleEl.addEventListener("blur", ()=>{
     if (isEditingTitle) commitTitleEdit();
@@ -365,9 +358,18 @@ const currencySeg = document.querySelector('.segmented[aria-label="Currency"]');
 const sortableHeaders = Array.from(document.querySelectorAll("th.sortable"));
 
 // ---------- persistence ----------
+async function requireLoginOrRedirect(){
+  const session = await requireSession();
+  if(!session){
+    location.href = "./login.html";
+    throw new Error("Not signed in");
+  }
+  return session;
+}
+
 // ------- persistence (Supabase) -------
 async function fetchSaveOrRedirect(){
-  await ensureAnonSession();
+  await requireLoginOrRedirect();
   const { data, error } = await supabase
     .from("saves")
     .select("*")
@@ -383,7 +385,7 @@ async function fetchSaveOrRedirect(){
 }
 
 async function fetchPlayers(){
-  await ensureAnonSession();
+  await requireLoginOrRedirect();
   const { data, error } = await supabase
     .from("players")
     .select("*")
@@ -670,7 +672,7 @@ btnAdd.addEventListener("click", async ()=>{
   if(!data) return;
 
   try{
-    await ensureAnonSession();
+    await requireLoginOrRedirect();
     // Build a DB-shaped payload (snake_case columns) to avoid schema mismatch errors.
     const payload = toDbPlayer({ ...data, save_id: CURRENT_SAVE_ID, created_at_ms: Date.now() });
 
@@ -707,7 +709,7 @@ btnUpdate.addEventListener("click", async ()=>{
   if(idx === -1) return;
 
   try{
-    await ensureAnonSession();
+    await requireLoginOrRedirect();
     // Build a DB-shaped payload (snake_case columns) to avoid schema mismatch errors.
     const payload = toDbPlayer({ ...data, save_id: CURRENT_SAVE_ID, created_at_ms: players[idx].created_at_ms || Date.now() });
 
@@ -752,7 +754,7 @@ btnReset.addEventListener("click", async ()=>{
   if(!ok) return;
 
   try{
-    await ensureAnonSession();
+    await requireLoginOrRedirect();
     const { error } = await supabase.from("players").delete().eq("save_id", CURRENT_SAVE_ID);
     if (error) throw error;
 
@@ -778,7 +780,7 @@ rowsEl.addEventListener("click", (e)=>{
     if(!ok) return;
     (async ()=>{
       try{
-        await ensureAnonSession();
+        await requireLoginOrRedirect();
         const { error } = await supabase.from("players").delete().eq("id", id);
         if (error) throw error;
         players = players.filter(x=>x.id!==id);
@@ -812,7 +814,7 @@ importFile.addEventListener("change", async ()=>{
   if(!file) return;
 
   try{
-    await ensureAnonSession();
+    await requireLoginOrRedirect();
     const text = await file.text();
     const parsed = JSON.parse(text);
     if(!Array.isArray(parsed)) throw new Error("Invalid file format (expected an array).");
