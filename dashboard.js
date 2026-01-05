@@ -6,8 +6,6 @@
 
 import { supabase, requireSession } from "./supabaseClient.js";
 
-import { supabase } from "./supabaseClient.js";
-
 document.getElementById("btn-signout")?.addEventListener("click", async () => {
   const ok = confirm("Sign out?");
   if (!ok) return;
