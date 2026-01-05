@@ -4,8 +4,6 @@ import { supabase, requireSession } from "./supabaseClient.js";
 // Exchange rates source: exchangerate-api.com (open.er-api.com) base GBP.
 // Rates last updated: Tue, 23 Dec 2025 00:02:31 +0000.
 
-import { supabase } from "./supabaseClient.js";
-
 document.getElementById("btn-signout")?.addEventListener("click", async () => {
   const ok = confirm("Sign out?");
   if (!ok) return;
