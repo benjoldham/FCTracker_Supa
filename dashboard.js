@@ -4,7 +4,18 @@
 // - saves
 // - players
 
-import { supabase, ensureAnonSession } from "./supabaseClient.js";
+import { supabase, requireSession } from "./supabaseClient.js";
+
+import { supabase } from "./supabaseClient.js";
+
+document.getElementById("btn-signout")?.addEventListener("click", async () => {
+  const ok = confirm("Sign out?");
+  if (!ok) return;
+
+  await supabase.auth.signOut();
+  location.href = "./login.html";
+});
+
 
 function uid(){ return crypto.randomUUID ? crypto.randomUUID() : (Math.random().toString(16).slice(2) + Date.now().toString(16)); }
 function asInt(v,fallback=0){ const n=Number(v); return Number.isFinite(n) ? Math.trunc(n) : fallback; }
@@ -37,6 +48,16 @@ function fmtMoneyAbbrevGBP(amountGBP){
 const btnAdd = document.getElementById("btn-add-save");
 const rowsEl = document.getElementById("save-rows");
 const emptyEl = document.getElementById("empty-state");
+
+
+async function requireLoginOrRedirect(){
+  const session = await requireSession();
+  if(!session){
+    location.href = "./login.html";
+    throw new Error("Not signed in");
+  }
+  return session;
+}
 
 function setEmpty(isEmpty){
   if (!emptyEl) return;
@@ -114,7 +135,7 @@ async function refresh(){
 
 btnAdd?.addEventListener("click", async ()=>{
   try{
-    await ensureAnonSession();
+    await requireLoginOrRedirect();
     const name = prompt("Career save name:", "New Career Save");
     if (!name) return;
 
@@ -142,7 +163,7 @@ rowsEl?.addEventListener("click", async (e)=>{
   const delBtn  = e.target.closest("button[data-del]");
 
   try{
-    await ensureAnonSession();
+    await requireLoginOrRedirect();
 
     if (openBtn){
       location.href = `./tracker.html?save=${encodeURIComponent(id)}`;
@@ -185,7 +206,7 @@ rowsEl?.addEventListener("click", async (e)=>{
 
 (async function boot(){
   try{
-    await ensureAnonSession();
+    await requireLoginOrRedirect();
     await refresh();
   }catch(err){
     alert(err?.message || String(err));
